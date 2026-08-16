@@ -90,7 +90,7 @@ async def chat_libre(payload: ChatLibrePayload):
     except Exception as exc:  # noqa: BLE001
         logger.error("Error en chat-libre: %s", exc)
         return {
-            "respuesta": "¡Guau! Me cuesta conectar con mi cerebro, intenta de nuevo."
+            "respuesta": "Me cuesta conectar con mi cerebro, intentá de nuevo."
         }
 
 

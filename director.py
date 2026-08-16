@@ -11,6 +11,7 @@ redactar respuestas de 'Otros' en futuras mejoras.
 
 from __future__ import annotations
 
+import asyncio
 import json
 import logging
 from typing import Any
@@ -229,11 +230,14 @@ async def _clasificar_intencion(mensaje: str, contexto_asistente: str) -> str:
 
 async def _clasificar_con_llm(mensaje: str, contexto_asistente: str) -> str | None:
     try:
-        resultado = await _clasificacion_chain.ainvoke(
-            {
-                "mensaje": mensaje,
-                "contexto_asistente": contexto_asistente or "(sin contexto)",
-            }
+        resultado = await asyncio.wait_for(
+            _clasificacion_chain.ainvoke(
+                {
+                    "mensaje": mensaje,
+                    "contexto_asistente": contexto_asistente or "(sin contexto)",
+                }
+            ),
+            timeout=15,
         )
         texto = resultado if isinstance(resultado, str) else str(resultado)
         inicio = texto.find("{")

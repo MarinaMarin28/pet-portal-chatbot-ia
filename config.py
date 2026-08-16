@@ -5,7 +5,7 @@ load_dotenv()
 
 IP_PC_LINUX = os.getenv("IP_PC_LINUX", "127.0.0.1")
 OLLAMA_PORT = os.getenv("OLLAMA_PORT", "11434")
-MODEL_NAME = os.getenv("MODEL_NAME", "qwen2.5:3b")
+MODEL_NAME = os.getenv("MODEL_NAME", "qwen3:1.7b")
 OLLAMA_URL = f"http://{IP_PC_LINUX}:{OLLAMA_PORT}"
 
 # URL del backend NestJS (dueño de la BD) al que el chatbot consulta el catálogo.

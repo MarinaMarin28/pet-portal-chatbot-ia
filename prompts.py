@@ -71,7 +71,7 @@ MENSAJE_OTROS = (
 
 # --- Fallbacks ---
 MENSAJE_ERROR_CATALOGO = (
-    "¡Guau! Por un momentito no puedo consultar la información, "
+    "Por un momentito no puedo consultar la información, "
     "pero ya la dejé registrada. Volvé a intentar en unos segundos."
 )
 MENSAJE_ERROR_OPCION = "No entendí esa opción. Elegí una de las opciones del menú."
