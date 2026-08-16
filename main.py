@@ -1,59 +1,98 @@
-import os
+from __future__ import annotations
+
+import logging
+
+import uvicorn
 from fastapi import FastAPI, HTTPException
 from pydantic import BaseModel
-from dotenv import load_dotenv
-from langchain_core.prompts import ChatPromptTemplate
-from langchain_community.llms import Ollama
-import uvicorn
 
-load_dotenv()
+from config import APP_HOST, APP_PORT
+from director import procesar
 
-app = FastAPI(title="Microservicio Chatbot con Contexto")
+logging.basicConfig(level=logging.INFO)
+logger = logging.getLogger("chatbot")
 
-IP_PC_LINUX = os.getenv("IP_PC_LINUX", "127.0.0.1")
-OLLAMA_PORT = os.getenv("OLLAMA_PORT", "11434")
-MODEL_NAME = os.getenv("MODEL_NAME", "qwen2.5:3b")
-OLLAMA_URL = f"http://{IP_PC_LINUX}:{OLLAMA_PORT}"
+app = FastAPI(title="Microservicio Chatbot Pet Portal")
 
-# Inicializamos el modelo
-llm = Ollama(base_url=OLLAMA_URL, model=MODEL_NAME, temperature=0.3) # Bajamos la temperatura para que sea más preciso
 
-# 2. Modificamos el Prompt para que acepte un bloque de CONTEXTO real
-prompt = ChatPromptTemplate.from_messages([
-    ("system", (
-        "Sos el asistente virtual (un perrito amigable) de una clínica veterinaria.\n"
-        "El usuario seleccionó la opción 'Otros' para hacer una consulta general.\n"
-        "Para responder con total precisión, utilizá ÚNICAMENTE la siguiente información oficial de la clínica:\n"
-        "---------------------\n"
-        "{contexto_clinica}\n"
-        "---------------------\n"
-        "Reglas estrictas:\n"
-        "1. Responde de forma corta (máximo 3 oraciones), alegre, empática y profesional en español.\n"
-        "2. Si la respuesta NO se encuentra en la información oficial provista, dile amablemente que no tenés esa información exacta y que un humano se contactará con él."
-    )),
-    ("user", "{mensaje_cliente}")
-])
+class MensajeHistorial(BaseModel):
+    rol: str
+    contenido: str
 
-chain = prompt | llm
 
-# 3. Ampliamos el modelo de datos para recibir el contexto desde NestJS
 class ChatPayload(BaseModel):
+    sesionId: str | None = None
+    mensaje: str = ""
+    opcion: str | None = None
+    especialidadId: str | None = None
+    historial: list[MensajeHistorial] = []
+    usuarioLogueado: bool = False
+
+
+class ChatLibrePayload(BaseModel):
     mensaje: str
-    contexto: str # <-- Nuevo campo obligatorio opcional
+    contexto: str = ""
+
+
+@app.post("/api/v1/chat")
+async def chat(payload: ChatPayload):
+    """Endpoint principal: el chatbot dirige la conversación y devuelve una
+    respuesta estructurada (mensaje, tipo, opciones, acciones, datos) para que
+    el front la renderice. Lo consume el backend NestJS."""
+    try:
+        historial = [
+            {"rol": m.rol, "contenido": m.contenido} for m in payload.historial
+        ]
+        return await procesar(
+            {
+                "sesionId": payload.sesionId,
+                "mensaje": payload.mensaje,
+                "opcion": payload.opcion,
+                "especialidadId": payload.especialidadId,
+                "historial": historial,
+                "usuarioLogueado": payload.usuarioLogueado,
+            }
+        )
+    except Exception as exc:  # noqa: BLE001
+        logger.error("Error procesando chat: %s", exc)
+        raise HTTPException(status_code=500, detail="No se pudo procesar el mensaje")
+
 
 @app.post("/api/v1/chat-libre")
-async def procesar_chat_libre(payload: ChatPayload):
+async def chat_libre(payload: ChatLibrePayload):
+    """Endpoint de respaldo (sin orquestación). Mantiene compatibilidad con
+    versiones anteriores que pasaban contexto y usaban el modelo directo."""
+    from langchain_core.prompts import ChatPromptTemplate
+
+    from llm import llm
+
+    prompt = ChatPromptTemplate.from_messages([
+        ("system", (
+            "Sos el asistente virtual (un perrito amigable) de una clínica veterinaria.\n"
+            "Para responder con total precisión, usá ÚNICAMENTE la siguiente información oficial:\n"
+            "---------------------\n"
+            "{contexto_clinica}\n"
+            "---------------------\n"
+            "Reglas estrictas:\n"
+            "1. Respondé de forma corta (máximo 3 oraciones), alegre, empática y profesional en español.\n"
+            "2. Si la respuesta NO se encuentra en la información oficial, decilo con amabilidad "
+            "y ofrecé que un humano se contactará."
+        )),
+        ("user", "{mensaje_cliente}"),
+    ])
     try:
-        # Ejecutamos LangChain inyectando el mensaje y el contexto real
-        respuesta_ia = chain.invoke({
+        cadena = prompt | llm
+        respuesta = await cadena.ainvoke({
             "mensaje_cliente": payload.mensaje,
-            "contexto_clinica": payload.contexto
+            "contexto_clinica": payload.contexto or "(sin información adicional)",
         })
-        return {"respuesta": respuesta_ia}
-        
-    except Exception as e:
-        print(f"Error en LangChain: {e}")
-        return {"respuesta": "¡Guau! Me cuesta conectar con mi cerebro, intenta de nuevo."}
+        return {"respuesta": respuesta}
+    except Exception as exc:  # noqa: BLE001
+        logger.error("Error en chat-libre: %s", exc)
+        return {
+            "respuesta": "¡Guau! Me cuesta conectar con mi cerebro, intenta de nuevo."
+        }
+
 
 if __name__ == "__main__":
-    uvicorn.run("main:app", host="0.0.0.0", port=8001, reload=True)
+    uvicorn.run("main:app", host=APP_HOST, port=APP_PORT, reload=True)
