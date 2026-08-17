@@ -9,7 +9,13 @@ SALUDO = (
     "Hola! Soy tu asistente virtual del centro médico, "
     "¿en qué puedo ayudarte hoy?"
 )
-OPCIONES_MENU = ["Especialidades", "Productos", "Centros de atención", "Otros"]
+OPCIONES_MENU = [
+    "Especialidades",
+    "Productos",
+    "Centros de atención",
+    "Cronograma de vacunación",
+    "Otros",
+]
 OPCION_VOLVER = "Volver al menú"
 
 # --- Especialidades ---
@@ -51,6 +57,70 @@ MENSAJE_CENTROS = (
 )
 SIN_CENTROS = "Todavía no cargamos centros de atención. Volvé a intentar más tarde."
 
+# --- Cronograma de vacunación ---
+MENSAJE_CRONOGRAMA = (
+    "¡Buenísimo! Te paso el cronograma básico de vacunación y desparasitación. "
+    "¿Sobre qué mascota lo querés ver?"
+)
+OPCIONES_ESPECIE = ["Perros", "Gatos", OPCION_VOLVER]
+OPCIONES_TRAS_CRONOGRAMA_PERROS = ["Ver cronograma de gatos", OPCION_VOLVER]
+OPCIONES_TRAS_CRONOGRAMA_GATOS = ["Ver cronograma de perros", OPCION_VOLVER]
+MENSAJE_CRONOGRAMA_PERROS = (
+    "Cronograma de vacunación para perros\n\n"
+    "Vacunas en cachorros:\n"
+    "• Polivalente (séxtuple u óctuple): protege contra moquillo, parvovirus, "
+    "hepatitis, adenovirus, parainfluenza y leptospirosis.\n"
+    "• Antirrábica: obligatoria por ley.\n"
+    "• Opcional: tos de las perreras (Bordetella bronchiseptica).\n\n"
+    "Cronograma básico de vacunación:\n"
+    "• 6 a 8 semanas (1.5 a 2 meses): 1ª dosis de séxtuple + 1ª desparasitación interna.\n"
+    "• 10 a 12 semanas (2.5 a 3 meses): 2ª dosis de séxtuple + refuerzo de desparasitación.\n"
+    "• 14 a 16 semanas (3.5 a 4 meses): 3ª dosis de séxtuple + 1ª vacuna antirrábica.\n"
+    "• Al año de edad: refuerzo anual de la séxtuple y de la antirrábica. "
+    "Se repite una vez al año durante toda su vida adulta.\n\n"
+    "Desparasitación interna:\n"
+    "• Se inicia a las 2 o 3 semanas de vida.\n"
+    "• Se repite cada 15 días hasta los 3 meses.\n"
+    "• Luego, una vez al mes hasta los 6 meses.\n"
+    "• En la etapa adulta, de forma preventiva cada 3 meses.\n\n"
+    "Desparasitación externa (pulgas y garrapatas):\n"
+    "• Primera pipeta especial para cachorros a partir de los 45 días / 2 meses "
+    "(cuando superen el kilo de peso).\n"
+    "• Pastillas masticables desde las 8 semanas y 1.3 a 2 kg según el laboratorio.\n"
+    "• La frecuencia (mensual o trimestral) depende de la marca elegida.\n\n"
+    "Si tenés dudas, consultá con tu veterinario."
+)
+MENSAJE_CRONOGRAMA_GATOS = (
+    "Cronograma de vacunación para gatos\n\n"
+    "Vacunas en gatitos:\n"
+    "• Triple felina (trivalente): protege contra la panleucopenia, la calicivirosis "
+    "y la rinotraqueítis viral felina.\n"
+    "• Leucemia felina (FeLV): protege contra el virus de la leucemia. "
+    "Es fundamental testear al gato antes de aplicarla.\n"
+    "• Antirrábica: obligatoria por ley.\n\n"
+    "Cronograma básico de vacunación:\n"
+    "• 8 semanas (2 meses): test de leucemia e inmunodeficiencia (VIF/VILEF) "
+    "+ 1ª dosis de vacuna triple felina.\n"
+    "• 12 semanas (3 meses): 2ª dosis de vacuna triple felina + 1ª dosis "
+    "contra la leucemia.\n"
+    "• 16 semanas (4 meses): 2ª dosis contra la leucemia + vacuna antirrábica.\n"
+    "• Al año de edad: refuerzo anual de la triple felina, la leucemia y la "
+    "antirrábica. Se repite una vez al año durante toda su vida adulta.\n\n"
+    "Desparasitación interna:\n"
+    "• Se inicia a las 3 o 4 semanas de vida con jarabes o gotas aptas para cachorros.\n"
+    "• Se repite cada 15 días hasta los 3 meses.\n"
+    "• Luego, una vez al mes hasta los 6 meses.\n"
+    "• En la etapa adulta, de forma preventiva cada 3 o 4 meses (especialmente "
+    "si sale al exterior).\n\n"
+    "Desparasitación externa (pulgas, garrapatas y ácaros de la oreja):\n"
+    "• Pipetas especiales para gatitos desde las 6 u 8 semanas de vida "
+    "(habitualmente deben superar los 600 g u 800 g de peso).\n"
+    "• Comprimidos orales para pulgas desde las 9 semanas o cuando alcanzan 1 kg.\n\n"
+    "Importante: jamás uses productos de perros en gatos. La permetrina (común en "
+    "pipetas caninas) es altamente tóxica y mortal para los felinos.\n\n"
+    "Si tenés dudas, consultá con tu veterinario."
+)
+
 # --- Turno ---
 MENSAJE_NO_LOGUEADO = (
     "Para poder reservar un turno necesitás iniciar sesión en tu cuenta "
@@ -82,13 +152,15 @@ PROMPT_CLASIFICACION = (
     "médico veterinario. Dado el mensaje del cliente y el último mensaje del "
     "asistente, respondé ÚNICAMENTE con un JSON válido con este formato exacto:\n"
     "{{\"intencion\": \"<una de: especialidades, horarios_especialidad, productos, "
-    "centros, solicitar_turno, menu, otros>\"}}\n\n"
+    "centros, solicitar_turno, cronograma, menu, otros>\"}}\n\n"
     "Reglas:\n"
     "- Si el cliente pregunta por especialidades médicas: especialidades.\n"
     "- Si el cliente pide días, horarios o quién atiende una especialidad: horarios_especialidad.\n"
     "- Si el cliente pregunta por productos o compras: productos.\n"
     "- Si el cliente pregunta por sucursales, clínicas, direcciones o centros: centros.\n"
     "- Si el cliente quiere sacar, reservar o agendar un turno: solicitar_turno.\n"
+    "- Si el cliente pregunta por vacunas, desparasitación o el cronograma de vacunación "
+    "de una mascota: cronograma.\n"
     "- Si es un saludo, o quiere volver al menú: menu.\n"
     "- Cualquier otra consulta general: otros.\n\n"
     "Último mensaje del asistente:\n{contexto_asistente}\n\n"
