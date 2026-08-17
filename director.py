@@ -31,6 +31,9 @@ from prompts import (
     ACCION_REGISTRO,
     DIAS_SEMANA,
     MENSAJE_CENTROS,
+    MENSAJE_CRONOGRAMA,
+    MENSAJE_CRONOGRAMA_GATOS,
+    MENSAJE_CRONOGRAMA_PERROS,
     MENSAJE_ERROR_CATALOGO,
     MENSAJE_ERROR_OPCION,
     MENSAJE_ESPECIALIDADES,
@@ -38,8 +41,11 @@ from prompts import (
     MENSAJE_OTROS,
     MENSAJE_PRODUCTOS,
     MENSAJE_TURNO_LOGUEADO,
+    OPCIONES_ESPECIE,
     OPCIONES_LISTA,
     OPCIONES_MENU,
+    OPCIONES_TRAS_CRONOGRAMA_GATOS,
+    OPCIONES_TRAS_CRONOGRAMA_PERROS,
     OPCIONES_TURNO,
     OPCION_VOLVER,
     PROMPT_CLASIFICACION,
@@ -58,6 +64,7 @@ _INTENCIONES_VALIDAS = {
     "productos",
     "centros",
     "solicitar_turno",
+    "cronograma",
     "menu",
     "otros",
 }
@@ -68,6 +75,23 @@ _PALABRAS_CLAVE: dict[str, list[str]] = {
     "horarios_especialidad": ["horario", "horarios", "días", "dias", "atiende"],
     "productos": ["producto", "productos", "alimento", "mercado", "comprar", "precio"],
     "centros": ["centro", "centros", "sucursal", "sucursales", "dirección", "direccion", "dónde", "donde"],
+    "cronograma": [
+        "vacuna",
+        "vacunas",
+        "cronograma",
+        "desparasitación",
+        "desparasitacion",
+        "antirrábica",
+        "antirrabica",
+        "séxtuple",
+        "sextuple",
+        "triple felina",
+        "leucemia",
+        "cachorro",
+        "cachorros",
+        "gatito",
+        "gatitos",
+    ],
     "menu": ["hola", "menu", "menú", "ayuda", "empezar", "opciones"],
 }
 
@@ -103,6 +127,15 @@ async def procesar(payload: dict[str, Any]) -> dict[str, Any]:
     if opcion == "centros":
         return await _listar_centros()
 
+    if opcion == "cronograma":
+        return _elegir_cronograma()
+
+    if opcion == "cronograma_perros":
+        return _mostrar_cronograma_perros()
+
+    if opcion == "cronograma_gatos":
+        return _mostrar_cronograma_gatos()
+
     if opcion == "solicitar_turno":
         return _solicitar_turno(usuario_logueado)
 
@@ -129,6 +162,14 @@ async def procesar(payload: dict[str, Any]) -> dict[str, Any]:
     if intencion == "horarios_especialidad":
         # Si el mensaje nombra una especialidad, la resolvemos por nombre.
         return await _listar_horarios(None, mensaje)
+    if intencion == "cronograma":
+        # Si el mensaje nombra la especie, mostramos su cronograma directo.
+        mensaje_lower = mensaje.lower()
+        if "gato" in mensaje_lower or "gata" in mensaje_lower:
+            return _mostrar_cronograma_gatos()
+        if "perro" in mensaje_lower or "perra" in mensaje_lower:
+            return _mostrar_cronograma_perros()
+        return _elegir_cronograma()
 
     # Por defecto se trata como "Otros": mensaje genérico + registro para evaluación.
     return _respuesta(
@@ -187,6 +228,30 @@ async def _listar_centros() -> dict[str, Any]:
         return _respuesta(SIN_CENTROS, tipo="error", opciones=OPCIONES_LISTA)
     mensaje = _armar_mensaje_centros(centros)
     return _respuesta(mensaje, tipo="informacion", opciones=OPCIONES_LISTA, datos=centros)
+
+
+def _elegir_cronograma() -> dict[str, Any]:
+    return _respuesta(
+        MENSAJE_CRONOGRAMA,
+        tipo="opciones",
+        opciones=OPCIONES_ESPECIE,
+    )
+
+
+def _mostrar_cronograma_perros() -> dict[str, Any]:
+    return _respuesta(
+        MENSAJE_CRONOGRAMA_PERROS,
+        tipo="informacion",
+        opciones=OPCIONES_TRAS_CRONOGRAMA_PERROS,
+    )
+
+
+def _mostrar_cronograma_gatos() -> dict[str, Any]:
+    return _respuesta(
+        MENSAJE_CRONOGRAMA_GATOS,
+        tipo="informacion",
+        opciones=OPCIONES_TRAS_CRONOGRAMA_GATOS,
+    )
 
 
 def _solicitar_turno(usuario_logueado: bool) -> dict[str, Any]:
