@@ -304,8 +304,11 @@ def _armar_mensaje_productos(productos: list[dict[str, Any]]) -> str:
     lineas = [MENSAJE_PRODUCTOS, ""]
     for producto in productos:
         nombre = producto.get("name") or "Producto"
-        precio = producto.get("price")
+        precio = producto.get("precioCliente") or producto.get("price")
+        marca = producto.get("brand")
         linea = f"• {nombre}"
+        if marca:
+            linea += f" ({marca})"
         if precio:
             linea += f" — ${precio}"
         lineas.append(linea)
