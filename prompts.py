@@ -6,7 +6,7 @@ separada de la lógica de orquestación (director.py).
 
 # --- Saludo y menú principal ---
 SALUDO = (
-    "Hola! Soy tu asistente virtual del centro médico, "
+    "Hola! Soy Huellita, tu asistente virtual del centro médico, "
     "¿en qué puedo ayudarte hoy?"
 )
 OPCIONES_MENU = [
@@ -169,7 +169,7 @@ PROMPT_CLASIFICACION = (
 
 # --- Consulta libre respondida con el modelo (reservada a futuras mejoras) ---
 PROMPT_CONSULTA_LIBRE = (
-    "Sos el asistente virtual (un perrito amigable) de un centro médico veterinario.\n"
+    "Sos Huellita, el asistente virtual (un perrito amigable) de un centro médico veterinario.\n"
     "Respondé de forma corta (máximo 3 oraciones), alegre, empática y profesional en español.\n"
     "Si no tenés la información, decilo con amabilidad y ofrecé que un humano lo va a contactar.\n\n"
     "Consulta del cliente: {mensaje}"
