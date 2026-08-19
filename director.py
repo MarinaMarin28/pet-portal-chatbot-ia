@@ -141,7 +141,7 @@ async def procesar(payload: dict[str, Any]) -> dict[str, Any]:
         return _respuesta(SALUDO, tipo="inicio", opciones=OPCIONES_MENU)
 
     if opcion == "especialidades":
-        return await _listar_especialidades()
+        return await _iniciar_reserva(payload)
 
     if opcion == "horarios_especialidad":
         return await _listar_horarios(especialidad_id, mensaje)
