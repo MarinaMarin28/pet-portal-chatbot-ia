@@ -14,21 +14,29 @@ from __future__ import annotations
 import asyncio
 import json
 import logging
+from datetime import datetime
 from typing import Any
 
 from langchain_core.prompts import ChatPromptTemplate
 
 from catalog import (
+    crear_mascota_publica,
+    crear_turno_publico,
     obtener_centros,
+    obtener_centros_por_especialidad,
+    obtener_dias_disponibles,
     obtener_especialidades,
     obtener_horarios,
+    obtener_horarios_disponibles,
     obtener_productos,
+    obtener_profesionales_por_especialidad,
 )
 from llm import llm
 from prompts import (
     ACCION_IR_AGENDA,
     ACCION_LOGIN,
     ACCION_REGISTRO,
+    ACCION_RESERVAR_SIN_CUENTA,
     DIAS_SEMANA,
     MENSAJE_CENTROS,
     MENSAJE_CRONOGRAMA,
@@ -37,11 +45,22 @@ from prompts import (
     MENSAJE_ERROR_CATALOGO,
     MENSAJE_ERROR_OPCION,
     MENSAJE_ESPECIALIDADES,
-    MENSAJE_NO_LOGUEADO,
     MENSAJE_OTROS,
     MENSAJE_PRODUCTOS,
-    MENSAJE_TURNO_LOGUEADO,
+    MENSAJE_TURNO_CONFIRMACION,
+    MENSAJE_TURNO_CENTRO,
+    MENSAJE_TURNO_DIA,
+    MENSAJE_TURNO_ESPECIALIDAD,
+    MENSAJE_TURNO_ESPECIE,
+    MENSAJE_TURNO_ERROR,
+    MENSAJE_TURNO_EXITO,
+    MENSAJE_TURNO_HORA,
+    MENSAJE_TURNO_NOMBRE_DUENIO,
+    MENSAJE_TURNO_NOMBRE_MASCOTA,
+    MENSAJE_TURNO_PROFESIONAL,
+    MENSAJE_TURNO_REDIRECCION,
     OPCIONES_ESPECIE,
+    OPCIONES_ESPECIE_TURNO,
     OPCIONES_LISTA,
     OPCIONES_MENU,
     OPCIONES_TRAS_CRONOGRAMA_GATOS,
@@ -57,6 +76,11 @@ from prompts import (
 )
 
 logger = logging.getLogger("director")
+
+# Estado en memoria de la reserva de turno por sesión de chat. El microservicio
+# es stateless entre mensajes, así que las selecciones de cada conversación se
+# acumulan acá (la clave es la sesionId de la conversación).
+_estado_turno: dict[str, dict[str, Any]] = {}
 
 _INTENCIONES_VALIDAS = {
     "especialidades",
@@ -113,6 +137,7 @@ async def procesar(payload: dict[str, Any]) -> dict[str, Any]:
         return _respuesta(SALUDO, tipo="inicio", opciones=OPCIONES_MENU)
 
     if opcion == "volver_menu" or mensaje.lower() in ("volver al menú", "volver al menu"):
+        _estado_turno.pop(payload.get("sesionId") or "", None)
         return _respuesta(SALUDO, tipo="inicio", opciones=OPCIONES_MENU)
 
     if opcion == "especialidades":
@@ -137,7 +162,7 @@ async def procesar(payload: dict[str, Any]) -> dict[str, Any]:
         return _mostrar_cronograma_gatos()
 
     if opcion == "solicitar_turno":
-        return _solicitar_turno(usuario_logueado)
+        return await _iniciar_reserva(payload)
 
     if opcion == "otros":
         return _respuesta(
@@ -146,6 +171,10 @@ async def procesar(payload: dict[str, Any]) -> dict[str, Any]:
             opciones=OPCIONES_LISTA,
             guardar_consulta=True,
         )
+
+    # Pasos de la reserva de turno guiada (las opciones llevan la selección).
+    if isinstance(opcion, str) and opcion.startswith("turno_"):
+        return await _gestionar_turno(payload, opcion)
 
     # Consulta libre: clasificar intención (LLM con fallback por palabras clave).
     intencion = await _clasificar_intencion(mensaje, _ultimo_asistente(historial))
@@ -156,7 +185,7 @@ async def procesar(payload: dict[str, Any]) -> dict[str, Any]:
     if intencion == "centros":
         return await _listar_centros()
     if intencion == "solicitar_turno":
-        return _solicitar_turno(usuario_logueado)
+        return await _iniciar_reserva(payload)
     if intencion == "menu":
         return _respuesta(SALUDO, tipo="inicio", opciones=OPCIONES_MENU)
     if intencion == "horarios_especialidad":
@@ -254,25 +283,351 @@ def _mostrar_cronograma_gatos() -> dict[str, Any]:
     )
 
 
-def _solicitar_turno(usuario_logueado: bool) -> dict[str, Any]:
-    if not usuario_logueado:
-        return _respuesta(
-            MENSAJE_NO_LOGUEADO,
-            tipo="autenticacion",
-            opciones=[ACCION_LOGIN, ACCION_REGISTRO, OPCION_VOLVER],
-            acciones=[
-                {"etiqueta": ACCION_LOGIN, "url": "/login", "accion": "iniciar_sesion"},
-                {"etiqueta": ACCION_REGISTRO, "url": "/registro", "accion": "registrarse"},
-            ],
+async def _iniciar_reserva(payload: dict[str, Any]) -> dict[str, Any]:
+    sesion_id = payload.get("sesionId") or ""
+    _estado_turno[sesion_id] = {
+        "usuario_logueado": bool(payload.get("usuarioLogueado")),
+    }
+    return await _elegir_especialidad_turno(sesion_id)
+
+
+async def _gestionar_turno(payload: dict[str, Any], opcion: str) -> dict[str, Any]:
+    sesion_id = payload.get("sesionId") or ""
+    _estado_turno.setdefault(sesion_id, {})
+    prefijo, _, valor = opcion.partition(":")
+
+    if prefijo == "turno_especialidad":
+        return await _elegir_centro_turno(sesion_id, valor)
+    if prefijo == "turno_centro":
+        return await _elegir_profesional_turno(sesion_id, valor)
+    if prefijo == "turno_profesional":
+        return await _elegir_dia_turno(sesion_id, valor)
+    if prefijo == "turno_dia":
+        return await _elegir_hora_turno(sesion_id, valor)
+    if prefijo == "turno_hora":
+        return await _procesar_hora_turno(sesion_id, valor)
+    if prefijo == "turno_especie":
+        return _procesar_especie_turno(sesion_id, valor)
+    if prefijo == "turno_nombre_mascota":
+        return _procesar_nombre_mascota_turno(
+            sesion_id, payload.get("mensaje") or ""
         )
+    if prefijo == "turno_nombre_duenio":
+        return await _procesar_nombre_duenio_turno(
+            sesion_id, payload.get("mensaje") or ""
+        )
+    if prefijo == "turno_reservar":
+        return await _reservar_turno(sesion_id)
+    return _respuesta(MENSAJE_ERROR_OPCION, tipo="error", opciones=[OPCION_VOLVER])
+
+
+async def _elegir_especialidad_turno(sesion_id: str) -> dict[str, Any]:
+    especialidades = await obtener_especialidades()
+    if not especialidades:
+        return _respuesta(
+            SIN_ESPECIALIDADES, tipo="error", opciones=OPCIONES_LISTA
+        )
+    estado = _estado_turno.setdefault(sesion_id, {})
+    estado["especialidades"] = {
+        (e.get("id") or ""): (e.get("name") or "Sin nombre") for e in especialidades
+    }
     return _respuesta(
-        MENSAJE_TURNO_LOGUEADO,
+        MENSAJE_TURNO_ESPECIALIDAD,
+        tipo="turno_especialidad",
+        opciones=[e.get("name") or "Sin nombre" for e in especialidades],
+        datos=especialidades,
+    )
+
+
+async def _elegir_centro_turno(
+    sesion_id: str, especialidad_id: str
+) -> dict[str, Any]:
+    estado = _estado_turno.setdefault(sesion_id, {})
+    estado["especialidadId"] = especialidad_id
+    estado["especialidadNombre"] = (
+        estado.get("especialidades", {}).get(especialidad_id) or especialidad_id
+    )
+    centros = await obtener_centros_por_especialidad(especialidad_id)
+    if not centros:
+        return _respuesta(
+            "Uy, por ahora no hay centros con esa especialidad. "
+            "Probá elegir otra especialidad.",
+            tipo="error",
+            opciones=[OPCION_VOLVER],
+        )
+    estado["centros"] = {
+        (c.get("id") or ""): (c.get("name") or "Sin nombre") for c in centros
+    }
+    return _respuesta(
+        MENSAJE_TURNO_CENTRO,
+        tipo="turno_centro",
+        opciones=[c.get("name") or "Sin nombre" for c in centros],
+        datos=centros,
+    )
+
+
+async def _elegir_profesional_turno(
+    sesion_id: str, centro_id: str
+) -> dict[str, Any]:
+    estado = _estado_turno.setdefault(sesion_id, {})
+    estado["centroId"] = centro_id
+    estado["centroNombre"] = estado.get("centros", {}).get(centro_id) or centro_id
+    profesionales = await obtener_profesionales_por_especialidad(
+        estado.get("especialidadId"), centro_id
+    )
+    if not profesionales:
+        return _respuesta(
+            "No encontré profesionales disponibles en ese centro para esa "
+            "especialidad. Probá elegir otro centro.",
+            tipo="error",
+            opciones=[OPCION_VOLVER],
+        )
+    estado["profesionales"] = {
+        (p.get("id") or ""): (p.get("name") or "Sin nombre")
+        for p in profesionales
+    }
+    return _respuesta(
+        MENSAJE_TURNO_PROFESIONAL,
+        tipo="turno_profesional",
+        opciones=[p.get("name") or "Sin nombre" for p in profesionales],
+        datos=profesionales,
+    )
+
+
+async def _elegir_dia_turno(sesion_id: str, profesional_id: str) -> dict[str, Any]:
+    estado = _estado_turno.setdefault(sesion_id, {})
+    estado["profesionalId"] = profesional_id
+    estado["profesionalNombre"] = (
+        estado.get("profesionales", {}).get(profesional_id) or profesional_id
+    )
+    dias = await obtener_dias_disponibles(
+        estado.get("especialidadId"),
+        profesional_id,
+        estado.get("centroId"),
+    )
+    if not dias:
+        return _respuesta(
+            "No encontré días disponibles para ese profesional. "
+            "Probá elegir otro profesional.",
+            tipo="error",
+            opciones=[OPCION_VOLVER],
+        )
+    opciones: list[str] = []
+    datos: list[dict[str, Any]] = []
+    for fecha in dias:
+        etiqueta = _formatear_dia(str(fecha))
+        opciones.append(etiqueta)
+        datos.append({"date": str(fecha), "label": etiqueta})
+    return _respuesta(
+        MENSAJE_TURNO_DIA,
+        tipo="turno_dia",
+        opciones=opciones,
+        datos=datos,
+    )
+
+
+async def _elegir_hora_turno(sesion_id: str, fecha: str) -> dict[str, Any]:
+    estado = _estado_turno.setdefault(sesion_id, {})
+    estado["fecha"] = fecha
+    horarios = await obtener_horarios_disponibles(
+        estado.get("especialidadId"),
+        estado.get("profesionalId"),
+        fecha,
+        estado.get("centroId"),
+    )
+    if not horarios:
+        return _respuesta(
+            "No encontré horarios disponibles para ese día. "
+            "Probá elegir otro día.",
+            tipo="error",
+            opciones=[OPCION_VOLVER],
+        )
+    opciones: list[str] = []
+    datos: list[dict[str, Any]] = []
+    for item in horarios:
+        hora = item.get("hora")
+        if not hora:
+            continue
+        etiqueta = _formatear_hora(str(hora))
+        opciones.append(etiqueta)
+        datos.append({"hora": str(hora), "label": etiqueta})
+    return _respuesta(
+        MENSAJE_TURNO_HORA,
+        tipo="turno_hora",
+        opciones=opciones,
+        datos=datos,
+    )
+
+
+async def _procesar_hora_turno(sesion_id: str, hora: str) -> dict[str, Any]:
+    estado = _estado_turno.setdefault(sesion_id, {})
+    estado["hora"] = hora
+    if estado.get("usuario_logueado"):
+        return _turno_redireccion(sesion_id)
+    return _respuesta(
+        MENSAJE_TURNO_ESPECIE,
+        tipo="turno_especie",
+        opciones=OPCIONES_ESPECIE_TURNO,
+    )
+
+
+def _procesar_especie_turno(sesion_id: str, especie: str) -> dict[str, Any]:
+    estado = _estado_turno.setdefault(sesion_id, {})
+    estado["especie"] = especie
+    return _respuesta(
+        MENSAJE_TURNO_NOMBRE_MASCOTA,
+        tipo="turno_pedir_nombre_mascota",
+        opciones=[OPCION_VOLVER],
+    )
+
+
+def _procesar_nombre_mascota_turno(
+    sesion_id: str, nombre: str
+) -> dict[str, Any]:
+    estado = _estado_turno.setdefault(sesion_id, {})
+    estado["nombreMascota"] = nombre.strip()
+    return _respuesta(
+        MENSAJE_TURNO_NOMBRE_DUENIO,
+        tipo="turno_pedir_nombre_duenio",
+        opciones=[OPCION_VOLVER],
+    )
+
+
+async def _procesar_nombre_duenio_turno(
+    sesion_id: str, nombre: str
+) -> dict[str, Any]:
+    estado = _estado_turno.setdefault(sesion_id, {})
+    estado["nombreDuenio"] = nombre.strip()
+    return _respuesta(
+        MENSAJE_TURNO_CONFIRMACION.format(
+            resumen=_armar_resumen_turno(estado, con_mascota=True)
+        ),
+        tipo="turno_confirmacion",
+        opciones=[ACCION_RESERVAR_SIN_CUENTA, OPCION_VOLVER],
+        acciones=[
+            {"etiqueta": ACCION_LOGIN, "url": "/login", "accion": "iniciar_sesion"},
+            {"etiqueta": ACCION_REGISTRO, "url": "/registro", "accion": "registrarse"},
+        ],
+        datos=[{"pendiente": _turno_pendiente(estado)}],
+    )
+
+
+def _turno_redireccion(sesion_id: str) -> dict[str, Any]:
+    estado = _estado_turno.setdefault(sesion_id, {})
+    return _respuesta(
+        MENSAJE_TURNO_REDIRECCION.format(
+            resumen=_armar_resumen_turno(estado)
+        ),
         tipo="redireccion",
         url="/turnos",
         acciones=[
             {"etiqueta": ACCION_IR_AGENDA, "url": "/turnos", "accion": "ir_agenda"}
         ],
+        datos=[{"pendiente": _turno_pendiente(estado)}],
     )
+
+
+async def _reservar_turno(sesion_id: str) -> dict[str, Any]:
+    estado = _estado_turno.get(sesion_id, {})
+    nombre_mascota = (estado.get("nombreMascota") or "").strip()
+    especie = (estado.get("especie") or "").strip()
+    nombre_duenio = (estado.get("nombreDuenio") or "").strip()
+    if not nombre_mascota or not nombre_duenio:
+        return _respuesta(MENSAJE_TURNO_ERROR, tipo="error", opciones=OPCIONES_LISTA)
+
+    mascota = await crear_mascota_publica(
+        {
+            "name": nombre_mascota,
+            "species": especie,
+            "ownerName": nombre_duenio,
+        }
+    )
+    if not mascota:
+        return _respuesta(MENSAJE_TURNO_ERROR, tipo="error", opciones=OPCIONES_LISTA)
+
+    turno = await crear_turno_publico(
+        {
+            "petId": mascota.get("id"),
+            "clinicId": estado.get("centroId"),
+            "specialtyId": estado.get("especialidadId"),
+            "professionalId": estado.get("profesionalId"),
+            "date": estado.get("hora"),
+            "sesionId": sesion_id,
+        }
+    )
+    if not turno:
+        return _respuesta(MENSAJE_TURNO_ERROR, tipo="error", opciones=OPCIONES_LISTA)
+
+    _estado_turno.pop(sesion_id, None)
+    return _respuesta(
+        MENSAJE_TURNO_EXITO.format(
+            resumen=_armar_resumen_turno(estado, con_mascota=True)
+        ),
+        tipo="turno_exito",
+        opciones=[OPCION_VOLVER],
+        datos=[{"turno": turno}],
+    )
+
+
+def _turno_pendiente(estado: dict[str, Any]) -> dict[str, Any]:
+    return {
+        "especialidadId": estado.get("especialidadId"),
+        "centroId": estado.get("centroId"),
+        "profesionalId": estado.get("profesionalId"),
+        "fecha": estado.get("fecha"),
+        "horario": estado.get("hora"),
+    }
+
+
+def _armar_resumen_turno(
+    estado: dict[str, Any], con_mascota: bool = False
+) -> str:
+    lineas = [
+        f"Especialidad: {estado.get('especialidadNombre') or estado.get('especialidadId') or 'a confirmar'}"
+    ]
+    if estado.get("centroNombre") or estado.get("centroId"):
+        lineas.append(
+            f"Centro: {estado.get('centroNombre') or estado.get('centroId')}"
+        )
+    if estado.get("profesionalNombre") or estado.get("profesionalId"):
+        lineas.append(
+            f"Profesional: {estado.get('profesionalNombre') or estado.get('profesionalId')}"
+        )
+    fecha = estado.get("fecha")
+    hora = estado.get("hora")
+    if fecha:
+        fecha_etiqueta = _formatear_dia(str(fecha))
+        if hora:
+            lineas.append(
+                f"Día y hora: {fecha_etiqueta} a las {_formatear_hora(str(hora))}"
+            )
+        else:
+            lineas.append(f"Día: {fecha_etiqueta}")
+    if con_mascota:
+        mascota = estado.get("nombreMascota") or "tu mascota"
+        especie = estado.get("especie") or ""
+        dueño = estado.get("nombreDuenio") or ""
+        lineas.append(f"Mascota: {mascota}{f' ({especie})' if especie else ''}")
+        if dueño:
+            lineas.append(f"A nombre de: {dueño}")
+    return "\n".join(lineas)
+
+
+def _formatear_dia(fecha: str) -> str:
+    try:
+        dt = datetime.strptime(fecha, "%Y-%m-%d")
+        dia_semana = DIAS_SEMANA[(dt.weekday() + 1) % 7]
+        return f"{dia_semana} {dt.day:02d}/{dt.month:02d}"
+    except ValueError:
+        return fecha
+
+
+def _formatear_hora(hora: str) -> str:
+    try:
+        dt = datetime.fromisoformat(hora.replace("Z", "+00:00"))
+        return dt.strftime("%H:%M")
+    except ValueError:
+        return hora[:5]
 
 
 async def _clasificar_intencion(mensaje: str, contexto_asistente: str) -> str:

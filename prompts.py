@@ -133,6 +133,44 @@ ACCION_LOGIN = "Iniciar sesión"
 ACCION_REGISTRO = "Registrarme"
 ACCION_IR_AGENDA = "Ir a la agenda"
 
+# --- Reserva de turno guiada ---
+MENSAJE_TURNO_ESPECIALIDAD = (
+    "¡Dale! Vamos a reservar tu turno. Primero, ¿qué especialidad necesitás?"
+)
+MENSAJE_TURNO_CENTRO = "¿En qué centro te gustaría atenderte?"
+MENSAJE_TURNO_PROFESIONAL = (
+    "¿Con qué profesional preferís? Mirá los días y horarios disponibles."
+)
+MENSAJE_TURNO_DIA = "¿Qué día te conviene?"
+MENSAJE_TURNO_HORA = "¿A qué hora preferís?"
+MENSAJE_TURNO_ESPECIE = (
+    "Para dejar tu reserva, contame un poquito de tu mascota. ¿Qué especie es?"
+)
+MENSAJE_TURNO_NOMBRE_MASCOTA = "¿Cómo se llama tu mascota?"
+MENSAJE_TURNO_NOMBRE_DUENIO = (
+    "¿Y cuál es tu nombre para dejar anotado el turno?"
+)
+OPCIONES_ESPECIE_TURNO = ["Perro", "Gato", "Otro"]
+MENSAJE_TURNO_REDIRECCION = (
+    "¡Perfecto! Elegiste:\n\n{resumen}\n\nTe redirijo a la agenda para "
+    "confirmar tu turno."
+)
+MENSAJE_TURNO_CONFIRMACION = (
+    "Resumen de tu turno:\n\n{resumen}\n\n"
+    "Si ya tenés una cuenta, iniciá sesión o registrate para asociarlo a tu perfil. "
+    "Si preferís, podés reservarlo sin cuenta y un empleado lo va a vincular "
+    "cuando nos visites."
+)
+ACCION_RESERVAR_SIN_CUENTA = "Reservar sin cuenta"
+MENSAJE_TURNO_EXITO = (
+    "¡Turno reservado! Te esperamos:\n\n{resumen}\n\n"
+    "Como no estás registrado, tu mascota quedó asociada a tu nombre y "
+    "un empleado la va a vincular a tu cuenta cuando nos visites."
+)
+MENSAJE_TURNO_ERROR = (
+    "Uy, no pude reservar el turno. Probá de nuevo en unos segundos."
+)
+
 # --- Otros (consulta libre, base para mejoras futuras) ---
 MENSAJE_OTROS = (
     "Gracias por tu consulta, en este momento no podré ayudarte "
