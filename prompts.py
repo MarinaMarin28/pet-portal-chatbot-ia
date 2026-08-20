@@ -147,25 +147,30 @@ MENSAJE_TURNO_ESPECIE = (
     "Para dejar tu reserva, contame un poquito de tu mascota. ¿Qué especie es?"
 )
 MENSAJE_TURNO_NOMBRE_MASCOTA = "¿Cómo se llama tu mascota?"
-MENSAJE_TURNO_NOMBRE_DUENIO = (
-    "¿Y cuál es tu nombre para dejar anotado el turno?"
-)
+MENSAJE_TURNO_NOMBRE_DUENIO = "¿Cuál es tu nombre para dejar anotado el turno?"
 OPCIONES_ESPECIE_TURNO = ["Perro", "Gato", "Otro"]
+MENSAJE_TURNO_ES_CLIENTE = (
+    "¡Buenísimo, ya casi está! Elegiste:\n\n{resumen}\n\n"
+    "¿Sos cliente de Pet Portal?"
+)
+OPCIONES_ES_CLIENTE = ["Sí, soy cliente", "No, sin cuenta"]
+MENSAJE_TURNO_LOGIN_REQUERIDO = (
+    "¡Perfecto! Para llevarte la agenda con tu turno precargado "
+    "necesitás iniciar sesión en tu cuenta de cliente."
+)
 MENSAJE_TURNO_REDIRECCION = (
     "¡Perfecto! Elegiste:\n\n{resumen}\n\nTe redirijo a la agenda para "
     "confirmar tu turno."
 )
 MENSAJE_TURNO_CONFIRMACION = (
     "Resumen de tu turno:\n\n{resumen}\n\n"
-    "Si ya tenés una cuenta, iniciá sesión o registrate para asociarlo a tu perfil. "
-    "Si preferís, podés reservarlo sin cuenta y un empleado lo va a vincular "
-    "cuando nos visites."
+    "¿Confirmás la reserva sin cuenta?"
 )
 ACCION_RESERVAR_SIN_CUENTA = "Reservar sin cuenta"
 MENSAJE_TURNO_EXITO = (
-    "¡Turno reservado! Te esperamos:\n\n{resumen}\n\n"
+    "¡Turno reservado! Te confirmamos:\n\n{resumen}\n\n"
     "Como no estás registrado, tu mascota quedó asociada a tu nombre y "
-    "un empleado la va a vincular a tu cuenta cuando nos visites."
+    "el personal de la clínica ya puede ver tu turno en la agenda."
 )
 MENSAJE_TURNO_ERROR = (
     "Uy, no pude reservar el turno. Probá de nuevo en unos segundos."
