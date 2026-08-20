@@ -179,6 +179,16 @@ async def procesar(payload: dict[str, Any]) -> dict[str, Any]:
     if isinstance(opcion, str) and opcion.startswith("turno_"):
         return await _gestionar_turno(payload, opcion)
 
+    # Respuesta en texto libre a la pregunta "¿Sos cliente de Pet Portal?".
+    sesion_id = payload.get("sesionId") or ""
+    estado = _estado_turno.get(sesion_id, {})
+    if estado.get("hora") and "esCliente" not in estado:
+        respuesta_cliente = _interpretar_es_cliente_texto(mensaje)
+        if respuesta_cliente:
+            return await _gestionar_turno(
+                payload, f"turno_es_cliente:{respuesta_cliente}"
+            )
+
     # Consulta libre: clasificar intención (LLM con fallback por palabras clave).
     intencion = await _clasificar_intencion(mensaje, _ultimo_asistente(historial))
     if intencion == "especialidades":
@@ -659,6 +669,17 @@ def _zona_horaria_argentina() -> timezone | ZoneInfo:
         return ZoneInfo("America/Argentina/Buenos_Aires")
     except Exception:
         return timezone(timedelta(hours=-3))
+
+
+def _interpretar_es_cliente_texto(mensaje: str) -> str | None:
+    texto = mensaje.strip().lower().replace("í", "i")
+    if not texto:
+        return None
+    if "sin cuenta" in texto or texto.startswith("no"):
+        return "no"
+    if "soy cliente" in texto or texto.startswith("si"):
+        return "si"
+    return None
 
 
 async def _clasificar_intencion(mensaje: str, contexto_asistente: str) -> str:
