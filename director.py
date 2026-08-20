@@ -14,7 +14,8 @@ from __future__ import annotations
 import asyncio
 import json
 import logging
-from datetime import datetime
+from datetime import datetime, timezone, timedelta
+from zoneinfo import ZoneInfo
 from typing import Any
 
 from langchain_core.prompts import ChatPromptTemplate
@@ -625,9 +626,17 @@ def _formatear_dia(fecha: str) -> str:
 def _formatear_hora(hora: str) -> str:
     try:
         dt = datetime.fromisoformat(hora.replace("Z", "+00:00"))
-        return dt.strftime("%H:%M")
+        local = dt.astimezone(_zona_horaria_argentina())
+        return local.strftime("%H:%M")
     except ValueError:
         return hora[:5]
+
+
+def _zona_horaria_argentina() -> timezone | ZoneInfo:
+    try:
+        return ZoneInfo("America/Argentina/Buenos_Aires")
+    except Exception:
+        return timezone(timedelta(hours=-3))
 
 
 async def _clasificar_intencion(mensaje: str, contexto_asistente: str) -> str:
