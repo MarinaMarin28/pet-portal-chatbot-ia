@@ -14,7 +14,8 @@ from __future__ import annotations
 import asyncio
 import json
 import logging
-from datetime import datetime
+from datetime import datetime, timezone, timedelta
+from zoneinfo import ZoneInfo
 from typing import Any
 
 from langchain_core.prompts import ChatPromptTemplate
@@ -35,7 +36,6 @@ from llm import llm
 from prompts import (
     ACCION_IR_AGENDA,
     ACCION_LOGIN,
-    ACCION_REGISTRO,
     ACCION_RESERVAR_SIN_CUENTA,
     DIAS_SEMANA,
     MENSAJE_CENTROS,
@@ -53,14 +53,17 @@ from prompts import (
     MENSAJE_TURNO_ESPECIALIDAD,
     MENSAJE_TURNO_ESPECIE,
     MENSAJE_TURNO_ERROR,
+    MENSAJE_TURNO_ES_CLIENTE,
     MENSAJE_TURNO_EXITO,
     MENSAJE_TURNO_HORA,
+    MENSAJE_TURNO_LOGIN_REQUERIDO,
     MENSAJE_TURNO_NOMBRE_DUENIO,
     MENSAJE_TURNO_NOMBRE_MASCOTA,
     MENSAJE_TURNO_PROFESIONAL,
     MENSAJE_TURNO_REDIRECCION,
     OPCIONES_ESPECIE,
     OPCIONES_ESPECIE_TURNO,
+    OPCIONES_ES_CLIENTE,
     OPCIONES_LISTA,
     OPCIONES_MENU,
     OPCIONES_TRAS_CRONOGRAMA_GATOS,
@@ -141,7 +144,7 @@ async def procesar(payload: dict[str, Any]) -> dict[str, Any]:
         return _respuesta(SALUDO, tipo="inicio", opciones=OPCIONES_MENU)
 
     if opcion == "especialidades":
-        return await _listar_especialidades()
+        return await _iniciar_reserva(payload)
 
     if opcion == "horarios_especialidad":
         return await _listar_horarios(especialidad_id, mensaje)
@@ -175,6 +178,16 @@ async def procesar(payload: dict[str, Any]) -> dict[str, Any]:
     # Pasos de la reserva de turno guiada (las opciones llevan la selección).
     if isinstance(opcion, str) and opcion.startswith("turno_"):
         return await _gestionar_turno(payload, opcion)
+
+    # Respuesta en texto libre a la pregunta "¿Sos cliente de Pet Portal?".
+    sesion_id = payload.get("sesionId") or ""
+    estado = _estado_turno.get(sesion_id, {})
+    if estado.get("hora") and "esCliente" not in estado:
+        respuesta_cliente = _interpretar_es_cliente_texto(mensaje)
+        if respuesta_cliente:
+            return await _gestionar_turno(
+                payload, f"turno_es_cliente:{respuesta_cliente}"
+            )
 
     # Consulta libre: clasificar intención (LLM con fallback por palabras clave).
     intencion = await _clasificar_intencion(mensaje, _ultimo_asistente(historial))
@@ -285,9 +298,7 @@ def _mostrar_cronograma_gatos() -> dict[str, Any]:
 
 async def _iniciar_reserva(payload: dict[str, Any]) -> dict[str, Any]:
     sesion_id = payload.get("sesionId") or ""
-    _estado_turno[sesion_id] = {
-        "usuario_logueado": bool(payload.get("usuarioLogueado")),
-    }
+    _estado_turno[sesion_id] = {}
     return await _elegir_especialidad_turno(sesion_id)
 
 
@@ -306,16 +317,18 @@ async def _gestionar_turno(payload: dict[str, Any], opcion: str) -> dict[str, An
         return await _elegir_hora_turno(sesion_id, valor)
     if prefijo == "turno_hora":
         return await _procesar_hora_turno(sesion_id, valor)
-    if prefijo == "turno_especie":
-        return _procesar_especie_turno(sesion_id, valor)
+    if prefijo == "turno_es_cliente":
+        return await _procesar_es_cliente_turno(payload, sesion_id, valor)
+    if prefijo == "turno_nombre_duenio":
+        return _procesar_nombre_duenio_turno(
+            sesion_id, payload.get("mensaje") or ""
+        )
     if prefijo == "turno_nombre_mascota":
         return _procesar_nombre_mascota_turno(
             sesion_id, payload.get("mensaje") or ""
         )
-    if prefijo == "turno_nombre_duenio":
-        return await _procesar_nombre_duenio_turno(
-            sesion_id, payload.get("mensaje") or ""
-        )
+    if prefijo == "turno_especie":
+        return _procesar_especie_turno(sesion_id, valor)
     if prefijo == "turno_reservar":
         return await _reservar_turno(sesion_id)
     return _respuesta(MENSAJE_ERROR_OPCION, tipo="error", opciones=[OPCION_VOLVER])
@@ -462,18 +475,44 @@ async def _elegir_hora_turno(sesion_id: str, fecha: str) -> dict[str, Any]:
 async def _procesar_hora_turno(sesion_id: str, hora: str) -> dict[str, Any]:
     estado = _estado_turno.setdefault(sesion_id, {})
     estado["hora"] = hora
-    if estado.get("usuario_logueado"):
-        return _turno_redireccion(sesion_id)
     return _respuesta(
-        MENSAJE_TURNO_ESPECIE,
-        tipo="turno_especie",
-        opciones=OPCIONES_ESPECIE_TURNO,
+        MENSAJE_TURNO_ES_CLIENTE.format(
+            resumen=_armar_resumen_turno(estado)
+        ),
+        tipo="turno_es_cliente",
+        opciones=OPCIONES_ES_CLIENTE,
     )
 
 
-def _procesar_especie_turno(sesion_id: str, especie: str) -> dict[str, Any]:
+async def _procesar_es_cliente_turno(
+    payload: dict[str, Any], sesion_id: str, valor: str
+) -> dict[str, Any]:
     estado = _estado_turno.setdefault(sesion_id, {})
-    estado["especie"] = especie
+    estado["esCliente"] = valor == "si"
+    if valor == "si":
+        if bool(payload.get("usuarioLogueado")):
+            return _turno_redireccion(sesion_id)
+        return _respuesta(
+            MENSAJE_TURNO_LOGIN_REQUERIDO,
+            tipo="redireccion",
+            url="/login",
+            acciones=[
+                {"etiqueta": ACCION_LOGIN, "url": "/login", "accion": "iniciar_sesion"}
+            ],
+            datos=[{"pendiente": _turno_pendiente(estado)}],
+        )
+    return _respuesta(
+        MENSAJE_TURNO_NOMBRE_DUENIO,
+        tipo="turno_pedir_nombre_duenio",
+        opciones=[OPCION_VOLVER],
+    )
+
+
+def _procesar_nombre_duenio_turno(
+    sesion_id: str, nombre: str
+) -> dict[str, Any]:
+    estado = _estado_turno.setdefault(sesion_id, {})
+    estado["nombreDuenio"] = nombre.strip()
     return _respuesta(
         MENSAJE_TURNO_NOMBRE_MASCOTA,
         tipo="turno_pedir_nombre_mascota",
@@ -487,27 +526,21 @@ def _procesar_nombre_mascota_turno(
     estado = _estado_turno.setdefault(sesion_id, {})
     estado["nombreMascota"] = nombre.strip()
     return _respuesta(
-        MENSAJE_TURNO_NOMBRE_DUENIO,
-        tipo="turno_pedir_nombre_duenio",
-        opciones=[OPCION_VOLVER],
+        MENSAJE_TURNO_ESPECIE,
+        tipo="turno_especie",
+        opciones=OPCIONES_ESPECIE_TURNO,
     )
 
 
-async def _procesar_nombre_duenio_turno(
-    sesion_id: str, nombre: str
-) -> dict[str, Any]:
+def _procesar_especie_turno(sesion_id: str, especie: str) -> dict[str, Any]:
     estado = _estado_turno.setdefault(sesion_id, {})
-    estado["nombreDuenio"] = nombre.strip()
+    estado["especie"] = especie
     return _respuesta(
         MENSAJE_TURNO_CONFIRMACION.format(
             resumen=_armar_resumen_turno(estado, con_mascota=True)
         ),
         tipo="turno_confirmacion",
         opciones=[ACCION_RESERVAR_SIN_CUENTA, OPCION_VOLVER],
-        acciones=[
-            {"etiqueta": ACCION_LOGIN, "url": "/login", "accion": "iniciar_sesion"},
-            {"etiqueta": ACCION_REGISTRO, "url": "/registro", "accion": "registrarse"},
-        ],
         datos=[{"pendiente": _turno_pendiente(estado)}],
     )
 
@@ -625,9 +658,28 @@ def _formatear_dia(fecha: str) -> str:
 def _formatear_hora(hora: str) -> str:
     try:
         dt = datetime.fromisoformat(hora.replace("Z", "+00:00"))
-        return dt.strftime("%H:%M")
+        local = dt.astimezone(_zona_horaria_argentina())
+        return local.strftime("%H:%M")
     except ValueError:
         return hora[:5]
+
+
+def _zona_horaria_argentina() -> timezone | ZoneInfo:
+    try:
+        return ZoneInfo("America/Argentina/Buenos_Aires")
+    except Exception:
+        return timezone(timedelta(hours=-3))
+
+
+def _interpretar_es_cliente_texto(mensaje: str) -> str | None:
+    texto = mensaje.strip().lower().replace("í", "i")
+    if not texto:
+        return None
+    if "sin cuenta" in texto or texto.startswith("no"):
+        return "no"
+    if "soy cliente" in texto or texto.startswith("si"):
+        return "si"
+    return None
 
 
 async def _clasificar_intencion(mensaje: str, contexto_asistente: str) -> str:
