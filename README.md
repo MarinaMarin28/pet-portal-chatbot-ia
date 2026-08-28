@@ -1,121 +1,98 @@
-# pet-portal-chatbot-ia
+# Pet Portal Chatbot IA
 
-Microservicio **Chatbot de Pet Portal**: asistente virtual del centro médico
-veterinario que orienta a los clientes sobre especialidades, horarios, productos,
-centros de atención y turnos, y deriva consultas libres a un modelo de lenguaje
-local vía Ollama.
+Microservicio de IA del proyecto Pet Portal. Su objetivo es actuar como asistente virtual del centro veterinario para responder consultas sobre especialidades, horarios, productos, centros de atención, vacunación y flujo de turnos, con un diseño guiado y con respaldo de datos del backend.
 
-El chatbot no accede a la base de datos: consulta el catálogo bajo demanda al
-backend NestJS (`pet-portal-api`) mediante el endpoint interno
-`GET /chat/catalogo`, y el frontend (`pet-portal-front`) lo consume a través del
-backend (`POST /chat/interaccionar`), que actúa como puente hacia
-`POST /api/v1/chat` de este microservicio.
+## Objetivo del servicio
 
-## Arquitectura
+El chatbot está diseñado para:
 
-```
-Frontend (React)  -->  Backend NestJS (pet-portal-api)  -->  Chatbot (este repo)
-                                                              |      |
-                                                              v      v
-                                                     Catálogo (BD)  Ollama (LLM local)
-```
+- orientar al usuario sobre servicios y catálogo del negocio,
+- responder de forma estructurada y no libre en flujos deterministas,
+- colaborar con el frontend y con el backend para completar reservas o derivaciones,
+- usar LLM local para clasificar intenciones y apoyar casos de consulta libre.
 
-- `main.py`: app FastAPI con `POST /api/v1/chat` (orquestado) y `POST /api/v1/chat-libre` (respaldo).
-- `director.py`: orquestador híbrido. Clasifica la intención (LLM con fallback por
-  palabras clave), consulta el catálogo y devuelve una respuesta estructurada.
-- `catalog.py`: cliente HTTP del catálogo del backend (`especialidades`, `horarios`,
-  `productos`, `centros`).
-- `llm.py`: modelo local vía Ollama (LangChain), temperatura baja.
-- `prompts.py`: copy del flujo guiado y prompts del clasificador.
-- `config.py`: configuración desde variables de entorno.
+## Arquitectura de solución
 
-## Stack y versiones
-
-| Componente | Versión |
-| --- | --- |
-| Python | 3.11+ (recomendado) |
-| FastAPI | 0.141.1 |
-| Uvicorn | 0.52.3 |
-| LangChain core | 1.5.5 |
-| LangChain community | 0.4.2 |
-| LangChain classic | 1.0.8 |
-| httpx | 0.28.1 |
-| Pydantic | 2.13.4 |
-| python-dotenv | 1.2.2 |
-| Ollama | última estable (por ejemplo, 0.5.x) |
-| Modelo Ollama | `qwen3:1.7b` |
-
-Las dependencias exactas están pines en `requirements.txt`. El proyecto está
-pensado para Python 3.11 o superior (los paquetes de IA y numéricos de la lista
-de dependencias lo requieren).
-
-## Prerequisitos
-
-1. **Backend NestJS corriendo** en `http://localhost:8080` (o ajustar
-   `BACKEND_API_URL`), con el endpoint `GET /chat/catalogo` disponible.
-2. **Ollama instalado y corriendo**, con el modelo `qwen3:1.7b` descargado:
-
-   ```bash
-   # instalar Ollama (Linux/Windows/macOS): https://ollama.com
-   ollama serve
-   ollama pull qwen3:1.7b
-   ```
-
-   El chatbot se conecta a Ollama en `IP_PC_LINUX:OLLAMA_PORT` (por defecto
-   `127.0.0.1:11434`). Si Ollama corre en otra máquina de la red, indicar su IP.
-
-## Setup desde cero
-
-```bash
-# 1. Entorno virtual e instalación de dependencias
-python -m venv .venv
-# Windows:
-.venv\Scripts\activate
-# Linux/macOS:
-source .venv/bin/activate
-
-pip install -r requirements.txt
-
-# 2. Configuración
-cp .env.example .env
-# Editar .env:
-#   IP_PC_LINUX=127.0.0.1          # IP de la máquina donde corre Ollama
-#   OLLAMA_PORT=11434
-#   MODEL_NAME=qwen3:1.7b          # debe coincidir con un modelo descargado en Ollama
-#   BACKEND_API_URL=http://localhost:8080
-#   CHATBOT_TOKEN=<token igual al CHATBOT_TOKEN del backend pet-portal-api>
-#   APP_HOST=0.0.0.0
-#   APP_PORT=8001
-
-# 3. Levantar el servidor
-uvicorn main:app --host 0.0.0.0 --port 8001 --reload
+```text
+Frontend React
+   |
+   v
+Backend NestJS (pet-portal-api)
+   |
+   +--> /chat/catalogo   (catálogo del negocio)
+   +--> /chat/interaccionar (puente de mayor nivel)
+   |
+   v
+Chatbot FastAPI (este repositorio)
+   |-- main.py          # API de entrada
+   |-- director.py      # orquestador y flujo guiado
+   |-- catalog.py       # cliente del backend
+   |-- llm.py           # integración con Ollama / LangChain
+   |-- prompts.py       # copy, prompts y mensajes del asistente
+   |
+   +--> Ollama local (LLM)
 ```
 
-> **Importante:** `CHATBOT_TOKEN` debe ser el **mismo valor** que el `CHATBOT_TOKEN`
-> configurado en `pet-portal-api` (en `.env.local` para desarrollo). Si no
-> coinciden, el catálogo responde `401` y el chatbot muestra mensajes de
-> "no cargamos especialidades/productos".
+## Componentes clave
 
-## Variables de entorno (`.env.example`)
+- `main.py`: expone `POST /api/v1/chat` y `POST /api/v1/chat-libre`
+- `director.py`: orquesta la conversación, identifica intención y guía el flujo de turnos
+- `catalog.py`: consulta `GET /chat/catalogo` del backend para obtener especialidades, horarios, productos y centros
+- `llm.py`: conecta LangChain con Ollama usando un modelo local
+- `prompts.py`: centraliza la copy y los prompts del flujo guiado
+- `config.py`: configuración desde variables de entorno
 
-| Variable | Default | Descripción |
-| --- | --- | --- |
-| `IP_PC_LINUX` | `127.0.0.1` | IP de la máquina donde corre Ollama |
-| `OLLAMA_PORT` | `11434` | Puerto de Ollama |
-| `MODEL_NAME` | `qwen3:1.7b` | Modelo de Ollama a usar |
-| `BACKEND_API_URL` | `http://localhost:8080` | URL del backend NestJS |
-| `CHATBOT_TOKEN` | *(vacío)* | Token compartido con el backend para `GET /chat/catalogo` |
-| `APP_HOST` | `0.0.0.0` | Host del servidor del chatbot |
-| `APP_PORT` | `8001` | Puerto del servidor del chatbot |
+## Stack y dependencia de IA
 
-## Endpoints
+- Python 3.11+
+- FastAPI
+- Uvicorn
+- LangChain Core / Community
+- Pydantic
+- httpx
+- Ollama
+- modelo recomendado: `qwen3:1.7b`
 
-| Método | Ruta | Descripción |
-| --- | --- | --- |
-| `POST` | `/api/v1/chat` | Endpoint principal, orquestado. Devuelve respuesta estructurada para el front. |
-| `POST` | `/api/v1/chat-libre` | Respaldo (sin orquestación): usa el modelo directo con contexto. |
+El diseño es híbrido:
 
-La respuesta de `/api/v1/chat` tiene la forma:
+- flujo guiado determinista para opciones de negocio,
+- LLM usado con baja temperatura para clasificación y respaldo de consultas abiertas,
+- backend como fuente de verdad del catálogo.
+
+## AI engineering y orquestación
+
+Este repositorio implementa un patrón de orquestación del tipo:
+
+1. el usuario escribe una consulta,
+2. el backend y el frontend la envían al chatbot por medio de `POST /api/v1/chat`,
+3. el `director.py` decide si la intención es especialidad, producto, centro, cronograma o reserva,
+4. el servicio consulta el catálogo del backend,
+5. devuelve una respuesta estructurada a la UI para renderizar chips, redirecciones o mensajes,
+6. si el caso es libre o ambiguo, usa LLM para clasificación.
+
+Es importante destacar que el microservicio no es un almacén de negocio ni una capa de persistencia: está diseñado como un orquestador del flujo conversacional, con contexto y herramienta/comunicación sobre datos ya gobernados por el backend.
+
+## MCP / herramientas / servidores
+
+El repositorio refleja una arquitectura orientada a herramientas y contexto, aunque no define un servidor MCP formal completo en la entrega actual. En términos del Trabajo Práctico, la intención es que el componente de IA actúe como una capa de orquestación sobre datos del negocio y servicios externos, con un enfoque compatible con un modelo MCP-like.
+
+En la práctica del proyecto se observa lo siguiente:
+
+- catálogo de negocio consumido desde backend (`/chat/catalogo`),
+- flujo de herramientas de negocio y contexto dentro del director,
+- uso de LLM local para clasificación y respuesta en lenguaje natural,
+- posibilidad de ampliarse con herramientas externas (por ejemplo, servicios complementarios de agenda o integración con terceros) a través de la misma capa de orquestación.
+
+La implementación actual es sólida para el curso, pero no debe presentarse como un despliegue formal de dos servidores MCP externos completos si no existe evidencia de ejecución directa de esos servicios dentro del repositorio.
+
+## Endpoints principales
+
+```http
+POST /api/v1/chat
+POST /api/v1/chat-libre
+```
+
+Respuesta esperada del endpoint principal:
 
 ```json
 {
@@ -129,18 +106,59 @@ La respuesta de `/api/v1/chat` tiene la forma:
 }
 ```
 
+## Variables de entorno
+
+```env
+IP_PC_LINUX=
+OLLAMA_PORT=11434
+MODEL_NAME=qwen3:1.7b
+BACKEND_API_URL=http://localhost:8080
+CHATBOT_TOKEN=
+APP_HOST=0.0.0.0
+APP_PORT=8001
+```
+
+## Setup rápido
+
+```bash
+python -m venv .venv
+# Windows
+.venv\Scripts\activate
+# Linux/macOS
+source .venv/bin/activate
+
+pip install -r requirements.txt
+cp .env.example .env
+
+# Iniciar Ollama
+ollama serve
+ollama pull qwen3:1.7b
+
+# Ejecutar servicio
+uvicorn main:app --host 0.0.0.0 --port 8001 --reload
+```
+
 ## Verificación rápida
 
 ```bash
-curl http://localhost:8001/docs          # Swagger UI
+curl http://localhost:8001/docs
 curl -X POST http://localhost:8001/api/v1/chat \
   -H "Content-Type: application/json" \
   -d '{"mensaje": "", "opcion": "inicio"}'
 ```
 
-## Convenciones
+## Estado de cumplimiento con el TP
 
-- La copy y los prompts viven en `prompts.py`.
-- El catálogo se consulta al backend; nunca acceder a la BD directamente.
-- No hay runner de tests: validar con `python -m py_compile *.py` y un smoke test.
-- Flujo de trabajo y commit/push: ver `INSTRUCCIONES.md`.
+Este microservicio cumple con la expectativa general del Trabajo Práctico en cuanto a:
+
+- IA orientada a negocio,
+- orquestación con LangChain + Ollama,
+- uso de contexto y flujo guiado,
+- integración con backend y app frontend,
+- documentación técnica y funcional.
+
+La principal brecha no es técnica sino de cierre documental: debe definirse explícitamente qué parte del funcionamiento es determinista, qué parte es inferencia de IA, y qué parte todavía requiere validación funcional como caso de uso final.
+
+## Conclusión
+
+El chatbot de Pet Portal tiene una base muy clara para cumplir con la propuesta del TP: combina orquestación, contexto del negocio, LLM local y flujo guiado con una experiencia útil para clientes y personal. La principal tarea restante es cerrar la narrativa documental y dejar explícita la diferencia entre lo que está resuelto, lo que está parcialmente validado y lo que se deja como trabajo futuro.
